@@ -1,0 +1,5 @@
+adafruit_connection_manager==3.1.5
+adafruit_ticks==1.1.4
+adafruit_logging==5.5.5
+adafruit_minimqtt==8.0.2
+adafruit_pioasm==1.3.8

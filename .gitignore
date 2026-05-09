@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# KiCad
+/schematic/*-backups/
+
+# User-specific configuration
+/src/settings.toml
