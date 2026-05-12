@@ -20,6 +20,8 @@ from adafruit_ticks import ticks_add, ticks_diff, ticks_ms
 
 from logging import create_logger
 from mqtt import (
+    BUTTON_PRESS_PAYLOAD,
+    clear_retained_command_message,
     publish_availability_online_message,
     publish_homeassistant_discovery_message,
     set_availability_offline_will,
@@ -114,6 +116,11 @@ def main(logger: adafruit_logging.Logger) -> None:
 
     def on_press(_client, _topic, message) -> None:
         nonlocal next_press_ready_ticks
+        if isinstance(message, bytes):
+            message = message.decode("utf-8")
+        if message != BUTTON_PRESS_PAYLOAD:
+            logger.warning("Ignored unexpected MQTT press payload: %s", message)
+            return
         if ticks_diff(ticks_ms(), next_press_ready_ticks) < 0:
             logger.info("Dropped MQTT press; previous press still in progress")
             return
@@ -123,6 +130,10 @@ def main(logger: adafruit_logging.Logger) -> None:
         # relay is held
         relay.background_write(press_payload)
 
+    # Delete any retained command payload before subscribing. A retained PRESS from a manual test or
+    # misconfigured automation would otherwise be delivered immediately after subscribe and actuate
+    # the door during boot.
+    clear_retained_command_message(mqtt, mqtt_command_topic)
     mqtt.add_topic_callback(mqtt_command_topic, on_press)
     # Subscribe at QoS 0 so the broker never redelivers a press. At-most-once is the right semantic
     # for an action: a missed event requires a re-tap but a duplicate event toggles the door.

@@ -1,5 +1,7 @@
 import json
 
+BUTTON_PRESS_PAYLOAD = "PRESS"
+
 
 def publish_homeassistant_discovery_message(
     mqtt, device_id: str, command_topic: str, availability_topic: str
@@ -10,7 +12,7 @@ def publish_homeassistant_discovery_message(
             {
                 "unique_id": device_id,
                 "name": "Garage Door",
-                "object_id": "garage_door",
+                "default_entity_id": "button.garage_door",
                 "device": {
                     "name": "Garage Door Opener",
                     "identifiers": [device_id],
@@ -20,6 +22,8 @@ def publish_homeassistant_discovery_message(
                 },
                 "icon": "mdi:garage",
                 "command_topic": command_topic,
+                "payload_press": BUTTON_PRESS_PAYLOAD,
+                "retain": False,
                 # Home Assistant accepts the strings "online" and "offline" as the availability
                 # payloads by default, so we don't need to specify "payload_available" and
                 # "payload_not_available" fields in this discovery message.
@@ -29,6 +33,10 @@ def publish_homeassistant_discovery_message(
         retain=True,
         qos=1,
     )
+
+
+def clear_retained_command_message(mqtt, command_topic: str) -> None:
+    mqtt.publish(command_topic, "", retain=True, qos=1)
 
 
 def publish_availability_online_message(mqtt, availability_topic: str) -> None:
