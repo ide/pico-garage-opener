@@ -31,7 +31,7 @@ The contact side is two wires from the relay's screw terminals to the opener:
 
 `NC` is unused. The existing wall button is already connected across the same two opener terminals, so the relay ends up wired in parallel with it and both keep working.
 
-Before connecting the contact side, verify the module's trigger polarity. With `GP22` low, the relay's status LED should be off and you should hear no click. If the relay is energized at idle, the module is active low; invert the `relay.value` assignments in `src/code.py` so it idles open.
+Before connecting the contact side, verify the module's trigger polarity. With `GP22` low, the relay's status LED should be off and you should hear no click. If the relay is energized at idle, the module is active low; use an active-high relay module, or change the PIO setup in `src/code.py` so the pin idles high, pulses low, and returns high.
 
 ### BOM
 
