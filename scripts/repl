@@ -2,7 +2,54 @@
 
 set -euo pipefail
 
-device=$(ls -1 -t /dev/tty.usbmodem*)
+usage() {
+  echo "Usage: $(basename "$0") [DEVICE]"
+  echo 'Set CIRCUITPY_SERIAL_DEVICE to choose a device without passing an argument.'
+}
+
+if [[ "${1:-}" == '-h' || "${1:-}" == '--help' ]]; then
+  usage
+  exit 0
+fi
+
+if [ "$#" -gt 1 ]; then
+  usage >&2
+  exit 1
+fi
+
+if ! command -v screen &> /dev/null; then
+  echo 'screen is not installed on this computer. screen is used to connect to the CircuitPython REPL.'
+  exit 1
+fi
+
+device="${1:-${CIRCUITPY_SERIAL_DEVICE:-}}"
+if [ -n "$device" ]; then
+  if [ ! -e "$device" ]; then
+    echo "Could not find serial device: $device"
+    exit 1
+  fi
+else
+  shopt -s nullglob
+  devices=(/dev/tty.usbmodem*)
+  shopt -u nullglob
+
+  if [ "${#devices[@]}" -eq 0 ]; then
+    echo 'Could not detect a CircuitPython serial device at /dev/tty.usbmodem*. Make sure your Pico is connected with a USB data cable.'
+    exit 1
+  fi
+
+  device="${devices[0]}"
+  for candidate in "${devices[@]}"; do
+    if [ "$candidate" -nt "$device" ]; then
+      device="$candidate"
+    fi
+  done
+
+  if [ "${#devices[@]}" -gt 1 ]; then
+    echo "Multiple CircuitPython serial devices found; using newest device: $device"
+    echo 'Pass a device path or set CIRCUITPY_SERIAL_DEVICE to choose explicitly.'
+  fi
+fi
 
 # Reattach to an existing session if one exists; otherwise create a new one
 screen -D -R -S circuitpython "$device" 115200
