@@ -104,10 +104,6 @@ def main(logger: adafruit_logging.Logger) -> None:
     set_availability_offline_will(mqtt, mqtt_availability_topic)
     mqtt.connect()
     logger.info("Connected to the MQTT broker")
-    # Light the onboard LED to indicate the device has finished booting and is connected. The LED
-    # stays on for the lifetime of the program; if the MQTT connection drops the top-level exception
-    # handler resets the device, which turns the LED off until the next boot succeeds.
-    led.value = True
 
     # Use array.array("L") so the 32-bit count enters the PIO TX FIFO as a single word
     press_payload = array.array("L", [_BUTTON_PRESS_MS * 1000])
@@ -129,9 +125,13 @@ def main(logger: adafruit_logging.Logger) -> None:
             return
         next_press_ready_ticks = ticks_add(ticks_ms(), _BUTTON_PRESS_MS)
         logger.info("Received button press from MQTT: %s", message)
-        # `background_write` returns once DMA is armed so the MQTT loop keeps running while the
-        # relay is held
-        relay.background_write(press_payload)
+        led.value = True
+        try:
+            # `background_write` returns once DMA is armed so the MQTT loop keeps running while the
+            # relay is held
+            relay.background_write(press_payload)
+        finally:
+            led.value = False
 
     # Delete any retained command payload before subscribing. A retained PRESS from a manual test or
     # misconfigured automation would otherwise be delivered immediately after subscribe and actuate
