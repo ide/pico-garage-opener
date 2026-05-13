@@ -31,16 +31,17 @@ _BUTTON_PRESS_MS = int(os.getenv("BUTTON_PRESS_DURATION_MS", 500))
 
 # A PIO state machine drives the relay so the press timing is decoupled from the MQTT loop and from
 # the Python runtime. The state machine reads a microsecond count from its TX FIFO, drives the relay
-# pin HIGH, counts down at 1 MHz, then drives the pin LOW and waits for the next press. 1 MHz
-# divides cleanly from the 125 MHz system clock and is a conventional PIO timer rate.
+# pin LOW, counts down at 1 MHz, then drives the pin HIGH and waits for the next press. 1 MHz
+# divides cleanly from the 125 MHz system clock and is a conventional PIO timer rate. The relay
+# module is active low, so LOW energizes the coil for the press and HIGH is the idle state.
 _RELAY_PIO_FREQUENCY = 1_000_000
 _RELAY_PIO_PROGRAM = adafruit_pioasm.assemble("""
     pull block
-    set pins, 1
+    set pins, 0
     mov x, osr
 hold:
     jmp x-- hold
-    set pins, 0
+    set pins, 1
 """)
 
 
@@ -48,14 +49,16 @@ def main(logger: adafruit_logging.Logger) -> None:
     led = digitalio.DigitalInOut(board.LED)
     led.switch_to_output(value=False)
 
-    # GPIO 22 drives a 3.3V relay module wired to the opener's dry-contact terminals. The state
-    # machine starts with the pin low so the relay stays open at boot and through soft resets and
-    # the door does not unintentionally trigger when the Pico powers on.
+    # GPIO 22 drives a 3.3V active-low relay module wired to the opener's dry-contact terminals. The
+    # state machine starts with the pin high so the relay stays open through soft resets and once
+    # the state machine takes the pin. Between Pico power-on and state-machine startup the GPIO is a
+    # floating input, so boot-time safety relies on the relay module's input pull-up to keep the
+    # line high during that brief window.
     relay = rp2pio.StateMachine(
         _RELAY_PIO_PROGRAM,
         frequency=_RELAY_PIO_FREQUENCY,
         first_set_pin=board.GP22,
-        initial_set_pin_state=0,
+        initial_set_pin_state=1,
     )
 
     logger.info("Connecting to the local Wi-Fi network...")
