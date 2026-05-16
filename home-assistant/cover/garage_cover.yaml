@@ -1,0 +1,270 @@
+# WARNING: the garage opener Pico subscribes to door/<opener_device_id>/press.
+# A successful "PRESS" publish to that topic pulses the relay and toggles the
+# door. Do not publish to it without explicit permission from the user.
+#
+# See the README and state machine diagram in pico-garage-opener for
+# documentation.
+timer:
+  garage_door_travel:
+    duration: "00:00:15"
+    restore: false
+
+input_select:
+  garage_door_intent:
+    name: Garage door intent
+    options:
+      - idle
+      - opening
+      - closing
+    initial: idle
+    icon: mdi:gesture-tap
+
+template:
+  - cover:
+      - name: Garage door
+        unique_id: garage_door_cover
+        default_entity_id: cover.garage_door
+        device_class: garage
+        availability: >-
+          {{ has_value('binary_sensor.garage_door')
+             or has_value('button.garage_door') }}
+        state: >-
+          {% set sensor = states('binary_sensor.garage_door') %}
+          {% set intent = states('input_select.garage_door_intent') %}
+          {% if sensor not in ['on', 'off'] %}unknown
+          {% elif intent == 'opening' %}opening
+          {% elif intent == 'closing' %}closing
+          {% elif sensor == 'off' %}closed
+          {% else %}open
+          {% endif %}
+        # Cover services delegate to the relay press; the FSM automation
+        # turns the press into the right transition. We skip the press when
+        # the cover is already at (or moving toward) the requested state, or
+        # when state is unknown — pressing without knowing the door's
+        # position could send it the wrong way.
+        open_cover:
+          - choose:
+              - conditions: >-
+                  {{ states('cover.garage_door') in ['closed', 'closing'] }}
+                sequence:
+                  - action: button.press
+                    target:
+                      entity_id: button.garage_door
+        close_cover:
+          - choose:
+              - conditions: >-
+                  {{ states('cover.garage_door') in ['open', 'opening'] }}
+                sequence:
+                  - action: button.press
+                    target:
+                      entity_id: button.garage_door
+
+automation:
+  - alias: Garage door state machine
+    id: garage_door_state_machine
+    mode: queued
+    max: 20
+    triggers:
+      # Press detection. The button.garage_door state is the timestamp of the
+      # last press; not_from excludes the unknown/unavailable → timestamp
+      # transitions that fire when the Pico (re)connects to MQTT.
+      - trigger: state
+        id: opener_pressed
+        entity_id: button.garage_door
+        not_from:
+          - unknown
+          - unavailable
+      # Reed off → on. Catches out-of-band lifts (manual raise, RF remote,
+      # wall button) when no in-band press preceded.
+      - trigger: state
+        id: door_opened_out_of_band
+        entity_id: binary_sensor.garage_door
+        from: "off"
+        to: "on"
+      # Door reached fully-closed.
+      - trigger: state
+        id: door_reached_closed
+        entity_id: binary_sensor.garage_door
+        to: "off"
+      # Sensor dropped offline (or back to unknown at startup). Reset state so
+      # we don't keep showing a guessed motion or at-rest value.
+      - trigger: state
+        id: sensor_offline
+        entity_id: binary_sensor.garage_door
+        to:
+          - unavailable
+          - unknown
+      # Travel timer expired naturally; motion is presumed done.
+      - trigger: event
+        id: travel_timer_finished
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.garage_door_travel
+      # HA startup: clear any persisted motion intent so a restart mid-motion
+      # does not leave the cover stuck opening or closing with no timer to
+      # reset it.
+      - trigger: homeassistant
+        id: ha_started
+        event: start
+    actions:
+      - choose:
+          # Press while intent=opening: freeze the door.
+          # FSM: Op_off/Op_on + press → I_off/I_on.
+          - conditions:
+              - "{{ trigger.id == 'opener_pressed' }}"
+              - condition: state
+                entity_id: input_select.garage_door_intent
+                state: opening
+            sequence:
+              - action: timer.cancel
+                target:
+                  entity_id: timer.garage_door_travel
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: idle
+
+          # Press while intent=closing: reverse to opening.
+          # FSM: Cl_on + press → Op_on (restart timer for the reverse window).
+          - conditions:
+              - "{{ trigger.id == 'opener_pressed' }}"
+              - condition: state
+                entity_id: input_select.garage_door_intent
+                state: closing
+            sequence:
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: opening
+              - action: timer.start
+                target:
+                  entity_id: timer.garage_door_travel
+
+          # Press while intent=idle and door is closed: start opening.
+          # FSM: I_off + press → Op_off.
+          - conditions:
+              - "{{ trigger.id == 'opener_pressed' }}"
+              - condition: state
+                entity_id: input_select.garage_door_intent
+                state: idle
+              - condition: state
+                entity_id: binary_sensor.garage_door
+                state: "off"
+            sequence:
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: opening
+              - action: timer.start
+                target:
+                  entity_id: timer.garage_door_travel
+
+          # Press while intent=idle and door is open: start closing.
+          # FSM: I_on + press → Cl_on. When the sensor is unavailable, no
+          # branch matches and the press is a no-op (we can't infer direction).
+          - conditions:
+              - "{{ trigger.id == 'opener_pressed' }}"
+              - condition: state
+                entity_id: input_select.garage_door_intent
+                state: idle
+              - condition: state
+                entity_id: binary_sensor.garage_door
+                state: "on"
+            sequence:
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: closing
+              - action: timer.start
+                target:
+                  entity_id: timer.garage_door_travel
+
+          # Out-of-band lift: reed went off→on without an in-band press driving
+          # it. FSM: I_off + reed_opened → Op_on. The intent=idle guard avoids
+          # overriding a motion already in progress.
+          - conditions:
+              - "{{ trigger.id == 'door_opened_out_of_band' }}"
+              - condition: state
+                entity_id: input_select.garage_door_intent
+                state: idle
+            sequence:
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: opening
+              - action: timer.start
+                target:
+                  entity_id: timer.garage_door_travel
+
+          # Door reached fully-closed. Cancel any travel timer and reset intent
+          # to idle. The guard skips the redundant no-op case where we were
+          # already at rest with no timer (e.g., sensor returning from
+          # unavailable to off on startup).
+          - conditions:
+              - "{{ trigger.id == 'door_reached_closed' }}"
+              - or:
+                  - condition: state
+                    entity_id: timer.garage_door_travel
+                    state: active
+                  - condition: template
+                    value_template: >-
+                      {{ states('input_select.garage_door_intent') != 'idle' }}
+            sequence:
+              - action: timer.cancel
+                target:
+                  entity_id: timer.garage_door_travel
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: idle
+
+          # Sensor offline: drop motion intent so the cover reports 'unknown'.
+          # Cancel the timer so it doesn't fire later and reset intent to a
+          # stale value.
+          - conditions:
+              - "{{ trigger.id == 'sensor_offline' }}"
+            sequence:
+              - action: timer.cancel
+                target:
+                  entity_id: timer.garage_door_travel
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: idle
+
+          # Timer expired naturally. Motion presumed done; sensor decides
+          # whether we land at open or closed (or stay unknown).
+          - conditions:
+              - "{{ trigger.id == 'travel_timer_finished' }}"
+            sequence:
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: idle
+
+          # HA startup: clear any stuck intent and cancel the travel timer.
+          # input_select persists across restarts, so intent may come back
+          # mid-motion. The timer's restore: false is supposed to keep it
+          # idle through a restart, but startup state is uncertain in
+          # general (sensors transitioning through unknown/unavailable, MQTT
+          # integration still coming up), so we explicitly reset both rather
+          # than rely on the per-entity guarantee.
+          - conditions:
+              - "{{ trigger.id == 'ha_started' }}"
+            sequence:
+              - action: timer.cancel
+                target:
+                  entity_id: timer.garage_door_travel
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.garage_door_intent
+                data:
+                  option: idle

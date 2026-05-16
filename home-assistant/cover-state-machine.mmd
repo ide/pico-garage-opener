@@ -1,0 +1,43 @@
+stateDiagram-v2
+    state "cover=closed<br/>intent=idle · sensor=off · timer=idle" as I_off
+    state "cover=open<br/>intent=idle · sensor=on · timer=idle" as I_on
+    state "cover=unknown<br/>intent=idle · sensor=N/A · timer=idle" as Unknown
+    state "cover=opening (transient)<br/>intent=opening · sensor=off · timer=active" as Op_off
+    state "cover=opening<br/>intent=opening · sensor=on · timer=active" as Op_on
+    state "cover=closing<br/>intent=closing · sensor=on · timer=active" as Cl_on
+
+    [*] --> I_off: HA start
+
+    I_off --> Op_off: press
+    I_off --> Op_on: reed_opened
+    I_off --> Unknown: sensor → unavailable
+
+    I_on --> Cl_on: press
+    I_on --> I_off: reed_closed
+    I_on --> Unknown: sensor → unavailable
+
+    Unknown --> I_off: sensor returns off
+    Unknown --> I_on: sensor returns on
+
+    Op_off --> Op_on: reed_opened
+    Op_off --> I_off: press (freeze)
+    Op_off --> I_off: timer_expired
+    Op_off --> Unknown: sensor → unavailable
+
+    Op_on --> I_on: press (freeze)
+    Op_on --> I_on: timer_expired
+    Op_on --> I_off: reed_closed
+    Op_on --> Unknown: sensor → unavailable
+
+    Cl_on --> Op_on: press (reverse)
+    Cl_on --> I_on: timer_expired
+    Cl_on --> I_off: reed_closed
+    Cl_on --> Unknown: sensor → unavailable
+
+    classDef stable fill:#e8f0fe,stroke:#1a73e8
+    classDef transient fill:#fff3cd,stroke:#b58900,stroke-dasharray:4 3
+    classDef offline fill:#f0f0f0,stroke:#888
+
+    class I_off,I_on,Op_on,Cl_on stable
+    class Op_off transient
+    class Unknown offline

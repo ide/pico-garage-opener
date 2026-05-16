@@ -1,0 +1,103 @@
+# Template for cover-card.generated.yaml. build-card.mjs replaces the helper
+# marker below with the @begin-inline section of cover-card.js (followed by
+# `return api;`) so the helpers live exactly once, under variables.helpers.
+# Other [[[ ]]] blocks read the API off `variables.helpers.X`. Do not edit
+# the generated YAML directly; edit this template (for structure) or
+# cover-card.js (for logic).
+
+type: "custom:button-card"
+entity: cover.garage_door
+show_icon: true
+show_name: true
+show_state: true
+show_label: true
+name: "Garage door"
+
+variables:
+  helpers: |
+    [[[
+      /* @inline-helpers */
+    ]]]
+
+icon: |
+  [[[
+    variables.helpers.setupHaptics(this);
+    return variables.helpers.getIcon(entity);
+  ]]]
+
+state_display: |
+  [[[ return variables.helpers.getStateDisplay(entity, states); ]]]
+
+label: |
+  [[[ return variables.helpers.getLabel(entity, states); ]]]
+
+tap_action:
+  action: more-info
+  entity: binary_sensor.garage_door
+
+hold_action:
+  action: |
+    [[[ return variables.helpers.getHoldAction(states); ]]]
+  service: button.press
+  service_data:
+    entity_id: button.garage_door
+
+styles:
+  card:
+    - padding: var(--ha-space-3)
+  grid:
+    - grid-template-areas: '"i n" "s s" "l l"'
+    - grid-template-columns: auto 1fr
+    - grid-template-rows: auto auto auto
+    - column-gap: var(--ha-space-2)
+    - row-gap: 0
+    - text-align: left
+    - justify-items: start
+    - align-items: center
+  icon:
+    - color: |
+        [[[ return variables.helpers.getIconColor(entity); ]]]
+    - width: 28px
+    - height: 28px
+    - margin-top: -2px
+  name:
+    - font-size: var(--tile-info-primary-font-size, 14px)
+    - font-weight: var(--ha-font-weight-heading, var(--ha-font-weight-bold))
+    - line-height: var(--tile-info-primary-line-height)
+    - letter-spacing: var(--tile-info-primary-letter-spacing)
+    - color: var(--tile-info-primary-color)
+    - text-align: left
+    - justify-self: start
+  state:
+    - font-size: var(--tile-info-secondary-font-size, 12px)
+    - font-weight: var(--tile-info-secondary-font-weight)
+    - line-height: var(--tile-info-secondary-line-height)
+    - letter-spacing: var(--tile-info-secondary-letter-spacing)
+    - color: var(--tile-info-secondary-color)
+    - max-width: 100%
+    - margin-top: var(--ha-space-2)
+    - margin-left: var(--ha-space-1)
+    - text-align: left
+    - justify-self: start
+  label:
+    - font-size: var(--tile-info-secondary-font-size, 12px)
+    - font-weight: var(--tile-info-secondary-font-weight)
+    - line-height: var(--tile-info-secondary-line-height)
+    - letter-spacing: var(--tile-info-secondary-letter-spacing)
+    - color: var(--secondary-text-color)
+    - margin-top: var(--ha-space-1)
+    - margin-left: var(--ha-space-1)
+    - text-align: left
+    - justify-self: start
+
+extra_styles: |
+  .garage-when {
+    color: var(--secondary-text-color);
+    font-weight: var(--tile-info-secondary-font-weight);
+    letter-spacing: var(--tile-info-secondary-letter-spacing);
+    white-space: nowrap;
+  }
+
+grid_options:
+  columns: 6
+  rows: auto
