@@ -31,7 +31,8 @@ template:
         state: >-
           {% set sensor = states('binary_sensor.garage_door') %}
           {% set intent = states('input_select.garage_door_intent') %}
-          {% if sensor not in ['on', 'off'] %}unknown
+          {# Render none rather than "unknown" because HA's cover state validator logs an error for the string #}
+          {% if sensor not in ['on', 'off'] %}{{ none }}
           {% elif intent == 'opening' %}opening
           {% elif intent == 'closing' %}closing
           {% elif sensor == 'off' %}closed
